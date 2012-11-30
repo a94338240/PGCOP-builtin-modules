@@ -4,8 +4,10 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <strings.h>
+#include <string.h>
 #include <netinet/in.h>
+#include <netdb.h>
+#include <stdlib.h>
 
 static int socket_init(int argc, char *argv[]);
 static int socket_bind();
@@ -14,13 +16,15 @@ static int socket_send(int id, const void *buf, unsigned int len,
                        unsigned int flags);
 static int socket_recv(int id, void *buf, unsigned int len,
                        unsigned int flags);
+static int socket_connect();
 
 const pg_cop_module_com_hooks_t pg_cop_module_hooks = {
   .init = socket_init,
   .bind = socket_bind,
   .accept = socket_accept,
   .send = socket_send,
-  .recv = socket_recv
+  .recv = socket_recv,
+  .connect = socket_connect
 };
 
 const pg_cop_module_info_t pg_cop_module_info = {
@@ -31,24 +35,52 @@ const pg_cop_module_info_t pg_cop_module_info = {
 
 static int sockfd;
 static struct sockaddr_in serv_addr;
+static struct sockaddr_in remote_addr;
 
 static int socket_init(int argc, char *argv[])
 {
-  int port = 12728;
   int config_port;
+  char *config_remote_host = NULL;
+  int config_remote_port;
+  char *config_service_mode = NULL;
+  static struct hostent *host_info;
+
+  if (pg_cop_get_config_strdup
+      ("service.mode", &config_service_mode))
+    config_service_mode = strdup("server");
+
+  if (pg_cop_get_module_config_number
+      ("mod_socket.server.port", &config_port))
+    config_port = 12728;
+
+  if (pg_cop_get_module_config_strdup
+      ("mod_socket.remote.host", &config_remote_host))
+    config_remote_host = strdup("127.0.0.1");
+
+  if (pg_cop_get_module_config_number
+      ("mod_socket.remote.port", &config_remote_port))
+    config_remote_port = 12728;
 
   sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd == -1)
     return -1;
 
-  if (!pg_cop_get_module_config_number
-      ("mod_socket.server.port", &config_port))
-    port = config_port;
-
   bzero((char *)&serv_addr, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port = htons(port);
+  serv_addr.sin_port = htons(config_port);
   serv_addr.sin_addr.s_addr = INADDR_ANY;
+
+  bzero((char *)&remote_addr, sizeof(remote_addr));
+  host_info = gethostbyname(config_remote_host);
+  memcpy(&remote_addr.sin_addr.s_addr, 
+         host_info->h_addr, host_info->h_length);
+  serv_addr.sin_family = AF_INET;
+  serv_addr.sin_port = htons(config_remote_port);
+
+  if (config_remote_host)
+    free(config_remote_host);
+  if (config_service_mode)
+    free(config_service_mode);
 
   return 0;
 }
@@ -89,4 +121,10 @@ static int socket_recv(int id, void *buf, unsigned int len,
                 unsigned int flags)
 {
   return recv(id, buf, len, 0);
+}
+
+static int socket_connect()
+{
+  return connect(sockfd, (struct sockaddr *)&remote_addr, 
+                 sizeof(remote_addr));
 }
