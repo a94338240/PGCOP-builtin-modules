@@ -1,5 +1,6 @@
 #include "pg_cop_hooks.h"
 #include "pg_cop_debug.h"
+#include "pg_cop_config.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -33,13 +34,20 @@ static struct sockaddr_in serv_addr;
 
 static int socket_init(int argc, char *argv[])
 {
+  int port = 12728;
+  int config_port;
+
   sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd == -1)
     return -1;
 
+  if (!pg_cop_get_module_config_number
+      ("mod_socket.server.port", &config_port))
+    port = config_port;
+
   bzero((char *)&serv_addr, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port = htons(12728);
+  serv_addr.sin_port = htons(port);
   serv_addr.sin_addr.s_addr = INADDR_ANY;
 
   return 0;
@@ -47,12 +55,15 @@ static int socket_init(int argc, char *argv[])
 
 static int socket_bind()
 {
+  char debug_info[255];
+
   if (bind(sockfd, (struct sockaddr *)&serv_addr,
            sizeof(serv_addr)) < 0)
     return -1;
 
   listen(sockfd, 5);
-  MOD_DEBUG_INFO("Listen on port 12728");
+  sprintf(debug_info, "Listen on port %d", ntohs(serv_addr.sin_port));
+  MOD_DEBUG_INFO(debug_info);
   
   return 0;
 }

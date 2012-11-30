@@ -29,7 +29,8 @@ static void *transceiver_process(void *acc_cli)
   struct accepted_cli cli;
   pg_cop_data_in_t data_in;
   pg_cop_data_out_t data_out;
-  char block_buffer[8192];
+  char block_buffer[4096];
+  char private_data[4096];
   int read_size = 0;
 
   memcpy(&cli, (struct accepted_cli *)acc_cli, sizeof(cli));
@@ -44,16 +45,20 @@ static void *transceiver_process(void *acc_cli)
                        sizeof(welcome_info), 0);
 
   while ((read_size = pg_cop_hook_com_recv(cli.module, 
-                                                 cli.fd, block_buffer, 
-                                                 sizeof(block_buffer), 
-                                                 0)) > 0) {
+                                           cli.fd, block_buffer, 
+                                           sizeof(block_buffer), 
+                                           0)) > 0) {
     data_in.data = block_buffer;
     data_in.size = read_size;
+    data_in.private_data = private_data;
 
     PG_COP_EACH_MODULE_BEGIN(pg_cop_modules_list_for_proto);
-    pg_cop_hook_proto_process(_module, data_in, &data_out, 0);
-    /* TODO Service Process */
-    pg_cop_hook_proto_sweep(_module, data_out);
+    if (!pg_cop_hook_proto_process(_module, data_in, &data_out, 0)) {
+      /* TODO Service Process */
+      pg_cop_hook_proto_sweep(_module, data_out);
+    } else {
+      MOD_DEBUG_DEBUG(rodata_str_protocol_process_skipped);
+    }
     PG_COP_EACH_MODULE_END;
   }
 
