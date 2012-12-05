@@ -1,6 +1,7 @@
 #include "pg_cop_hooks.h"
 #include "pg_cop_debug.h"
 #include "pg_cop_rodata_strings.h"
+#include "pg_cop_config.h"
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -25,7 +26,7 @@ const pg_cop_module_trans_hooks_t pg_cop_module_hooks = {
 
 static void *transceiver_process(void *acc_cli)
 {
-  char welcome_info[255];
+  char welcome_info[255] = {};
   struct accepted_cli cli;
   pg_cop_data_in_t data_in;
   pg_cop_data_out_t data_out;
@@ -104,10 +105,17 @@ static void *transceiver_routine(void *module)
 
 static int transceiver_start()
 {
-  void *res;
   int s;
   char debug_info[MAXLEN_LOAD_MODULE_DEBUG_INFO];
   int count = 0;
+  char *config_mode;
+
+  if (pg_cop_get_module_config_strdup
+      ("service.mode", &config_mode))
+    goto out;
+
+  if (strcmp(config_mode, "server"))
+    goto out;
 
   PG_COP_EACH_MODULE_BEGIN(pg_cop_modules_list_for_com);
   /* FIXME Stack size. */
@@ -128,13 +136,10 @@ static int transceiver_start()
 
   sprintf(debug_info, rodata_str_com_module_enabled, count);
   MOD_DEBUG_INFO(debug_info);
-  if (count) {
-    PG_COP_EACH_MODULE_BEGIN(pg_cop_modules_list_for_com);
-    pthread_join(_module->thread, &res);
-    PG_COP_EACH_MODULE_END;
-  }
-  else
-    MOD_DEBUG_CRITICAL(rodata_str_no_com_module);
+
+ out:
+  if (config_mode)
+    free(config_mode);
 
   return 0;
 }

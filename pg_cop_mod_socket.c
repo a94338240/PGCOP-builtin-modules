@@ -34,6 +34,7 @@ const pg_cop_module_info_t pg_cop_module_info = {
 };
 
 static int sockfd;
+static int sockfd_cli;
 static struct sockaddr_in serv_addr;
 static struct sockaddr_in remote_addr;
 
@@ -42,12 +43,7 @@ static int socket_init(int argc, char *argv[])
   int config_port;
   char *config_remote_host = NULL;
   int config_remote_port;
-  char *config_service_mode = NULL;
   static struct hostent *host_info;
-
-  if (pg_cop_get_config_strdup
-      ("service.mode", &config_service_mode))
-    config_service_mode = strdup("server");
 
   if (pg_cop_get_module_config_number
       ("mod_socket.server.port", &config_port))
@@ -62,7 +58,8 @@ static int socket_init(int argc, char *argv[])
     config_remote_port = 12728;
 
   sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (sockfd == -1)
+  sockfd_cli = socket(AF_INET, SOCK_STREAM, 0);
+  if (sockfd == -1 || sockfd_cli == -1)
     return -1;
 
   bzero((char *)&serv_addr, sizeof(serv_addr));
@@ -74,13 +71,11 @@ static int socket_init(int argc, char *argv[])
   host_info = gethostbyname(config_remote_host);
   memcpy(&remote_addr.sin_addr.s_addr, 
          host_info->h_addr, host_info->h_length);
-  serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port = htons(config_remote_port);
+  remote_addr.sin_family = AF_INET;
+  remote_addr.sin_port = htons(config_remote_port);
 
   if (config_remote_host)
     free(config_remote_host);
-  if (config_service_mode)
-    free(config_service_mode);
 
   return 0;
 }
@@ -90,10 +85,15 @@ static int socket_bind()
   char debug_info[255];
 
   if (bind(sockfd, (struct sockaddr *)&serv_addr,
-           sizeof(serv_addr)) < 0)
+           sizeof(serv_addr)) < 0) {
+    MOD_DEBUG_ERROR("Failed to listen on port.");
     return -1;
+  }
 
-  listen(sockfd, 5);
+  if (listen(sockfd, 5)) {
+    MOD_DEBUG_ERROR("Failed to listen on port.");
+    return -1;
+  }
   sprintf(debug_info, "Listen on port %d", ntohs(serv_addr.sin_port));
   MOD_DEBUG_INFO(debug_info);
   
@@ -125,6 +125,9 @@ static int socket_recv(int id, void *buf, unsigned int len,
 
 static int socket_connect()
 {
-  return connect(sockfd, (struct sockaddr *)&remote_addr, 
-                 sizeof(remote_addr));
+  if ((connect(sockfd, (struct sockaddr *)&remote_addr, 
+               sizeof(remote_addr))))
+    return -1;
+  else
+    return sockfd;
 }
