@@ -22,16 +22,35 @@ const pg_cop_module_trans_hooks_t pg_cop_module_hooks = {
 static void *transceiver_routine(void *module)
 {
   int fd;
-  char buf[] = {"test"};
+  char private_data[4096] = {0};
+  char block_buffer[4096] = {0};
+  pg_cop_data_in_t data_in;
+  pg_cop_data_out_t data_out = {0};
+  int write_size = 1;
 
   if ((fd = pg_cop_hook_com_connect(module)) < 0) {
     MOD_DEBUG_ERROR("Cannot connect to remote server.");
     return NULL;
   }
 
-  for (;;) {
-    pg_cop_hook_com_send(module, fd, 
-                               buf, sizeof(buf), 0);
+  while(write_size > 0) {
+    data_in.data = "test";
+    data_in.size = 5;
+    data_in.private_data = private_data;
+
+    PG_COP_EACH_MODULE_BEGIN(pg_cop_modules_list_for_proto);
+    data_out.data = NULL;
+    data_out.size = 0;
+    data_out.private_data = private_data;
+    // TODO Service module
+    pg_cop_hook_proto_pack(_module, data_in, &data_out);
+    /* FIXME size */
+    memcpy(block_buffer, data_out.data, data_out.size);
+    pg_cop_hook_proto_sweep(_module, data_out);
+    PG_COP_EACH_MODULE_END;
+    
+    write_size = pg_cop_hook_com_send(module, fd, 
+                                      block_buffer, sizeof(block_buffer), 0);
   }
 
   return NULL;

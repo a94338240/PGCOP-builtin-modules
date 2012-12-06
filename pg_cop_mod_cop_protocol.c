@@ -6,93 +6,156 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct {
-  int is_sub;
-  int parent_proto_magic;
-} cop_proto_private_data_t;
+#pragma pack(push, 1)
 
-cop_proto_private_data_t private_data = {0, 0};
+typedef struct {
+  unsigned int magic_num;
+  char flag_mlt:1;
+  char flag_fin:1;
+  char flag_los:1;
+  char flag_ext:1;
+  char flag_reserved:4;
+  unsigned int index;
+  unsigned int length;
+} cop_proto_header;
+
+#pragma pack(pop)
 
 static int cop_main_proto_process(pg_cop_data_in_t in, 
                                   pg_cop_data_out_t *out,
                                   int sub_lvl);
 static int cop_main_proto_sweep(pg_cop_data_out_t out);
+static int cop_main_proto_pack(pg_cop_data_in_t in, 
+                               pg_cop_data_out_t *out);
 
 const pg_cop_module_info_t pg_cop_module_info = {
   .magic = 0xF7280201, /* FIXME */
   .type = PG_COP_MODULE_TYPE_PROTO,
-  .name = "mod_cop_main_protocol",
-  .private_data = (void *)&private_data
+  .name = "mod_cop_main_protocol"
 };
 
 const pg_cop_module_proto_hooks_t pg_cop_module_hooks = {
   .process = cop_main_proto_process,
-  .sweep = cop_main_proto_sweep
+  .sweep = cop_main_proto_sweep,
+  .pack = cop_main_proto_pack
 };
 
 static int cop_main_proto_process(pg_cop_data_in_t in, 
                                   pg_cop_data_out_t *out,
                                   int sub_lvl)
 {
-  static char *working_buf = NULL; /* FIXME */
-  static int asize = 0; /* FIXME */
-  static int last_asize = 0;
-  unsigned char *in_data = (unsigned char *)in.data;
-  out->data = NULL;
-  out->data = 0;
+  int *asize = in.private_data; /* FIXME */
+  char **working_buf = (void *)asize + sizeof(int);
+  // int *index = working_buf + sizeof(char *);
+  int last_asize = 0;
+  char *last_working_buf = NULL;
+  char *pdata;
+  cop_proto_header *header;
 
   if (sub_lvl != 0)
     return 0;
 
-  if (in.size < 17)
-    return 0;
+  out->data = NULL;
+  out->size = 0;
 
-  if (in_data[0] != 0xC7 || 
-      in_data[1] != 0x28 ||
-      in_data[2] != 0x07 || 
-      in_data[3] != 0x02)
-    return 0;
+  if (in.size < sizeof(cop_proto_header) || 
+      in.size > 8192)
+    return -1;
 
-  if (*((int *)&in_data[9]) != in.size - 13)
-    return 0;
+  if (in.data == NULL)
+    return -1;
 
-  /* TODO Check sum */
+  pdata = in.data;
+  header = (cop_proto_header *)malloc(sizeof(cop_proto_header));
+  memcpy(header, pdata, sizeof(cop_proto_header));
+  pdata += sizeof(cop_proto_header);    
 
-  last_asize = asize;
-  asize += *((int *)&in_data[9]) - 4;
+  if (header->magic_num != 0xC7280702)
+    return -1;
 
-  if (in_data[4] & 0x80) {
-    if (working_buf == NULL)
-      working_buf = (char *)malloc(asize); // FIXME freed, but...
+  if (header->length > in.size - sizeof(cop_proto_header))
+    return -1;
+
+  last_asize = *asize;
+  *asize += header->length;
+  if (header->flag_mlt) {
+    if (*working_buf == NULL)
+      *working_buf = (char *)malloc(*asize); // FIXME freed, but...
     else
-      working_buf = (char *)realloc(working_buf, asize); // FIXME freed, but...
+      *working_buf = (char *)realloc(*working_buf, *asize); // FIXME freed, but...
 
-    if (working_buf == NULL)
-      return 0;
+    if (*working_buf == NULL) {
+      MOD_DEBUG_ERROR("Memory cannot be allocated!");
+      if (last_working_buf)
+        free(last_working_buf);
+      return -1;
+    }
+
+    last_working_buf = *working_buf;
     
-    memcpy(&working_buf[last_asize], &in_data[13], 
-           *((int *)&in_data[9]));
+    memcpy((*working_buf) + last_asize, pdata, 
+           header->length);
+    pdata += header->length;
 
-    if (in_data[4] & 0x40) {
+    /* TODO Check sum */
+
+    if (header->flag_fin) {
+      out->data = *working_buf;
+      out->size = *asize;
+
+      *asize = 0;
+
       PG_COP_EACH_MODULE_BEGIN(pg_cop_modules_list_for_proto);
       pg_cop_hook_proto_process(_module, in, out, 1);
       PG_COP_EACH_MODULE_END;
     }
   } else {
-    working_buf = (char *)malloc(asize); // FIXME freed, but...
-    if (working_buf == NULL)
-      return 0;
+    *working_buf = (char *)malloc(*asize); // FIXME freed, but...
+    if (*working_buf == NULL)
+      return -1;
+    memset(*working_buf, 0, *asize);
 
-    memcpy(&working_buf[last_asize], &in_data[13], 
-           *((int *)&in_data[9]));
+    memcpy((*working_buf) + last_asize, pdata, 
+           header->length);
+    pdata += header->length;
+
+    /* TODO Check sum */
+    out->data = *working_buf;
+    out->size = *asize;
+
     PG_COP_EACH_MODULE_BEGIN(pg_cop_modules_list_for_proto);
     pg_cop_hook_proto_process(_module, in, out, 1);
     PG_COP_EACH_MODULE_END;
+
+    *asize = 0;
   }
 
-  if (working_buf)
-    free(working_buf);
+  if (header)
+    free(header);
     
+  return 0;
+}
+
+static int cop_main_proto_pack(pg_cop_data_in_t in, 
+                               pg_cop_data_out_t *out) {
+  cop_proto_header header = {};
+  char *data;
+  char *pdata;
+
+  data = (char *)malloc(sizeof(cop_proto_header) + 
+                        in.size + 4);
+  pdata = data;
+
+  header.magic_num = 0xC7280702;
+  header.length = in.size;
+
+  memcpy(pdata, &header, sizeof(header));
+  pdata += sizeof(header);
+  memcpy(pdata, in.data, in.size);
+
+  out->data = data;
+  out->size = sizeof(header) + in.size;
+  
   return 0;
 }
 
