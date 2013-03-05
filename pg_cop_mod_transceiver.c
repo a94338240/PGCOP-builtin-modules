@@ -33,19 +33,9 @@ static void *transceiver_process(void *acc_cli)
   char block_buffer[4096] = {0};
   char private_data[4096] = {0};
   int read_size = 0;
+  pg_cop_module_t *module;
 
   memcpy(&cli, (struct accepted_cli *)acc_cli, sizeof(cli));
-
-#if 0
-  sprintf(welcome_info, rodata_str_module_serv_to_you_format, 
-          cli.module->info->name);
-
-  pg_cop_hook_com_send(cli.module, cli.fd, 
-                       rodata_str_service_welcome_message, 
-                       rodata_size_str_service_welcome_message, 0);
-  pg_cop_hook_com_send(cli.module, cli.fd, welcome_info, 
-                       sizeof(welcome_info), 0);
-#endif
 
   while ((read_size = pg_cop_hook_com_recv(cli.module, 
                                            cli.fd, block_buffer, 
@@ -58,14 +48,18 @@ static void *transceiver_process(void *acc_cli)
     data_out.size = 0;
     data_out.private_data = private_data;
 
-    PG_COP_EACH_MODULE_BEGIN(pg_cop_modules_list_for_proto);
-    if (!pg_cop_hook_proto_process(_module, data_in, &data_out, 0)) {
-      /* TODO Service Process */
-    } else {
-      MOD_DEBUG_DEBUG(rodata_str_protocol_process_skipped);
+    list_for_each_entry(module, &pg_cop_modules_list_for_proto->list_head,
+                        list_head) {
+      /* FIXME */
+      memset(private_data, 0, sizeof(private_data));
+      if (!pg_cop_hook_proto_process(module, data_in, &data_out, 0)) {
+        /* TODO service process */
+      } else {
+        // MOD_DEBUG_CRITICAL("%s\n", (char *)data_out.data);
+        MOD_DEBUG_DEBUG(rodata_str_protocol_process_skipped);
+      }
+      pg_cop_hook_proto_sweep(module, data_out);
     }
-    pg_cop_hook_proto_sweep(_module, data_out);
-    PG_COP_EACH_MODULE_END;
   }
 
   MOD_DEBUG_INFO(rodata_str_client_disconnected);
@@ -104,16 +98,18 @@ static void *transceiver_routine(void *module)
       MOD_DEBUG_ERROR(rodata_str_cannot_create_thread);
       continue;
     }
+
+    pthread_attr_destroy(&child_thread_attr);
   }
   return NULL;
 }
 
 static int transceiver_start()
 {
-  int s;
-  char debug_info[MAXLEN_LOAD_MODULE_DEBUG_INFO];
+  int s = 0;
   int count = 0;
-  char *config_mode;
+  char *config_mode = NULL;
+  pg_cop_module_t *module = NULL;
 
   if (pg_cop_get_module_config_strdup
       ("service.mode", &config_mode))
@@ -122,25 +118,26 @@ static int transceiver_start()
   if (strcmp(config_mode, "server"))
     goto out;
 
-  PG_COP_EACH_MODULE_BEGIN(pg_cop_modules_list_for_com);
-  /* FIXME Stack size. */
-  s = pthread_attr_init(&_module->thread_attr);
-  if (s != 0) {
-    MOD_DEBUG_ERROR(rodata_str_cannot_create_thread);
-    continue;
-  }
+  list_for_each_entry(module, &pg_cop_modules_list_for_com->list_head,
+                      list_head) {
+    /* FIXME Stack size. */
+    s = pthread_attr_init(&module->thread_attr);
+    if (s != 0) {
+      MOD_DEBUG_ERROR(rodata_str_cannot_create_thread);
+      continue;
+    }
   
-  if (pthread_create(&_module->thread, &_module->thread_attr,
-                     transceiver_routine, _module)) {
-    MOD_DEBUG_ERROR(rodata_str_cannot_create_thread);
-    continue;
-  }
-  
-  count++;
-  PG_COP_EACH_MODULE_END;
+    if (pthread_create(&module->thread, &module->thread_attr,
+                       transceiver_routine, module)) {
+      MOD_DEBUG_ERROR(rodata_str_cannot_create_thread);
+      continue;
+    }
 
-  sprintf(debug_info, rodata_str_com_module_enabled, count);
-  MOD_DEBUG_INFO(debug_info);
+    pthread_attr_destroy(&module->thread_attr);
+    count++;
+  }
+    
+  MOD_DEBUG_INFO(rodata_str_com_module_enabled, count);
 
  out:
   if (config_mode)

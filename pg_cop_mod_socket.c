@@ -82,8 +82,6 @@ static int socket_init(int argc, char *argv[])
 
 static int socket_bind()
 {
-  char debug_info[255];
-
   if (bind(sockfd, (struct sockaddr *)&serv_addr,
            sizeof(serv_addr)) < 0) {
     MOD_DEBUG_ERROR("Failed to listen on port.");
@@ -94,8 +92,7 @@ static int socket_bind()
     MOD_DEBUG_ERROR("Failed to listen on port.");
     return -1;
   }
-  sprintf(debug_info, "Listen on port %d", ntohs(serv_addr.sin_port));
-  MOD_DEBUG_INFO(debug_info);
+  MOD_DEBUG_INFO("Listen on port %d", ntohs(serv_addr.sin_port));
   
   return 0;
 }
@@ -120,7 +117,7 @@ static int socket_send(int id, const void *buf, unsigned int len,
 static int socket_recv(int id, void *buf, unsigned int len,
                 unsigned int flags)
 {
-  return recv(id, buf, len, 0);
+  return recv(id, buf, len, MSG_WAITALL);
 }
 
 static int socket_connect()

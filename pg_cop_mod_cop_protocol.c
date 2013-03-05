@@ -51,6 +51,9 @@ static int cop_main_proto_process(pg_cop_data_in_t in,
   char *last_working_buf = NULL;
   char *pdata;
   cop_proto_header *header;
+  pg_cop_module_t *module;
+  pg_cop_data_in_t internal_in;
+  internal_in.private_data = (void *)working_buf + sizeof(char *);
 
   if (sub_lvl != 0)
     return 0;
@@ -59,22 +62,31 @@ static int cop_main_proto_process(pg_cop_data_in_t in,
   out->size = 0;
 
   if (in.size < sizeof(cop_proto_header) || 
-      in.size > 8192)
+      in.size > 4096) {
+    MOD_DEBUG_ERROR("Input stream has wrong size.");
     return -1;
+  }
 
-  if (in.data == NULL)
+  if (in.data == NULL) {
+    MOD_DEBUG_ERROR("Input stream has no data.");
     return -1;
+  }
 
   pdata = in.data;
   header = (cop_proto_header *)malloc(sizeof(cop_proto_header));
   memcpy(header, pdata, sizeof(cop_proto_header));
-  pdata += sizeof(cop_proto_header);    
+  pdata += sizeof(cop_proto_header);
 
-  if (header->magic_num != 0xC7280702)
+  if (header->magic_num != 0xC7280702) {
+    MOD_DEBUG_ERROR("Input stream has wrong magic number, MAGIC=0x%08x", 
+                    header->magic_num);
     return -1;
+  }
 
-  if (header->length > in.size - sizeof(cop_proto_header))
+  if (header->length > in.size - sizeof(cop_proto_header)) {
+    MOD_DEBUG_ERROR("Input data has wrong size.");
     return -1;
+  }
 
   last_asize = *asize;
   *asize += header->length;
@@ -102,17 +114,22 @@ static int cop_main_proto_process(pg_cop_data_in_t in,
     if (header->flag_fin) {
       out->data = *working_buf;
       out->size = *asize;
+      internal_in.data = out->data;
+      internal_in.size = out->size;
 
       *asize = 0;
 
-      PG_COP_EACH_MODULE_BEGIN(pg_cop_modules_list_for_proto);
-      pg_cop_hook_proto_process(_module, in, out, 1);
-      PG_COP_EACH_MODULE_END;
+      list_for_each_entry(module, &pg_cop_modules_list_for_proto->list_head,
+                          list_head) {
+        pg_cop_hook_proto_process(module, internal_in, out, 1);
+      }
     }
   } else {
     *working_buf = (char *)malloc(*asize); // FIXME freed, but...
-    if (*working_buf == NULL)
+    if (*working_buf == NULL) {
+      MOD_DEBUG_ERROR("Cannot allocate memory.");
       return -1;
+    }
     memset(*working_buf, 0, *asize);
 
     memcpy((*working_buf) + last_asize, pdata, 
@@ -122,11 +139,14 @@ static int cop_main_proto_process(pg_cop_data_in_t in,
     /* TODO Check sum */
     out->data = *working_buf;
     out->size = *asize;
+    internal_in.data = out->data;
+    internal_in.size = out->size;
 
-    PG_COP_EACH_MODULE_BEGIN(pg_cop_modules_list_for_proto);
-    pg_cop_hook_proto_process(_module, in, out, 1);
-    PG_COP_EACH_MODULE_END;
-
+    list_for_each_entry(module, &pg_cop_modules_list_for_proto->list_head
+                        ,list_head) {
+      pg_cop_hook_proto_process(module, internal_in, out, 1);
+    }
+    
     *asize = 0;
   }
 
@@ -147,6 +167,9 @@ static int cop_main_proto_pack(pg_cop_data_in_t in,
   pdata = data;
 
   header.magic_num = 0xC7280702;
+  header.flag_mlt = 0;
+  header.flag_los = 0;
+  header.flag_ext = 0;
   header.length = in.size;
 
   memcpy(pdata, &header, sizeof(header));
