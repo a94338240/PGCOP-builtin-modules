@@ -21,9 +21,9 @@ typedef struct {
 
 #pragma pack(pop)
 
-static int cop_main_proto_process(pg_cop_data_in_t in, 
-                                  pg_cop_data_out_t *out,
-                                  int sub_lvl);
+static int cop_main_proto_unpack(pg_cop_data_in_t in, 
+                                 pg_cop_data_out_t *out,
+                                 int sub_lvl);
 static int cop_main_proto_sweep(pg_cop_data_out_t out);
 static int cop_main_proto_pack(pg_cop_data_in_t in, 
                                pg_cop_data_out_t *out);
@@ -35,12 +35,12 @@ const pg_cop_module_info_t pg_cop_module_info = {
 };
 
 const pg_cop_module_proto_hooks_t pg_cop_module_hooks = {
-  .process = cop_main_proto_process,
+  .unpack = cop_main_proto_unpack,
   .sweep = cop_main_proto_sweep,
   .pack = cop_main_proto_pack
 };
 
-static int cop_main_proto_process(pg_cop_data_in_t in, 
+static int cop_main_proto_unpack(pg_cop_data_in_t in, 
                                   pg_cop_data_out_t *out,
                                   int sub_lvl)
 {
@@ -118,11 +118,6 @@ static int cop_main_proto_process(pg_cop_data_in_t in,
       internal_in.size = out->size;
 
       *asize = 0;
-
-      list_for_each_entry(module, &pg_cop_modules_list_for_proto->list_head,
-                          list_head) {
-        pg_cop_hook_proto_process(module, internal_in, out, 1);
-      }
     }
   } else {
     *working_buf = (char *)malloc(*asize); // FIXME freed, but...
@@ -141,11 +136,6 @@ static int cop_main_proto_process(pg_cop_data_in_t in,
     out->size = *asize;
     internal_in.data = out->data;
     internal_in.size = out->size;
-
-    list_for_each_entry(module, &pg_cop_modules_list_for_proto->list_head
-                        ,list_head) {
-      pg_cop_hook_proto_process(module, internal_in, out, 1);
-    }
     
     *asize = 0;
   }

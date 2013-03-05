@@ -26,7 +26,6 @@ const pg_cop_module_trans_hooks_t pg_cop_module_hooks = {
 
 static void *transceiver_process(void *acc_cli)
 {
-  // char welcome_info[255] = {};
   struct accepted_cli cli;
   pg_cop_data_in_t data_in;
   pg_cop_data_out_t data_out;
@@ -34,31 +33,82 @@ static void *transceiver_process(void *acc_cli)
   char private_data[4096] = {0};
   int read_size = 0;
   pg_cop_module_t *module;
+  pg_cop_transfer_request_t *request;
+  pg_cop_transfer_request_t request_queue;
+  pg_cop_transfer_request_t response_queue;
+  int write_size = 0;
+  sem_t request_sem;
+  sem_init(&request_sem, 0, 0);
 
-  memcpy(&cli, (struct accepted_cli *)acc_cli, sizeof(cli));
+  INIT_LIST_HEAD(&request_queue.list_head);
+  INIT_LIST_HEAD(&response_queue.list_head);
+  cli = *((struct accepted_cli *)acc_cli);
 
-  while ((read_size = pg_cop_hook_com_recv(cli.module, 
-                                           cli.fd, block_buffer, 
-                                           sizeof(block_buffer), 
-                                           0)) > 0) {
-    data_in.data = block_buffer;
-    data_in.size = read_size;
-    data_in.private_data = private_data;
-    data_out.data = NULL;
-    data_out.size = 0;
-    data_out.private_data = private_data;
+  list_for_each_entry(module, &pg_cop_modules_list_for_service->list_head,
+                      list_head) {
+    pg_cop_hook_service_start(module, &request_sem, &request_queue, &response_queue);
+  }
 
-    list_for_each_entry(module, &pg_cop_modules_list_for_proto->list_head,
-                        list_head) {
-      /* FIXME */
-      memset(private_data, 0, sizeof(private_data));
-      if (!pg_cop_hook_proto_process(module, data_in, &data_out, 0)) {
-        /* TODO service process */
-      } else {
-        // MOD_DEBUG_CRITICAL("%s\n", (char *)data_out.data);
-        MOD_DEBUG_DEBUG(rodata_str_protocol_process_skipped);
+  while (1) {
+    sem_wait(&request_sem);
+    list_for_each_entry(request, &request_queue.list_head, list_head) {
+      data_in.data = request->out_data;
+      data_in.size = request->out_data_size;
+      data_in.private_data = private_data;
+      data_out.data = NULL;
+      data_out.size = 0;
+      data_out.private_data = private_data;
+
+      switch (request->type) {
+      case TRANSFER_REQUEST_TYPE_RESPONSE:
+      case TRANSFER_REQUEST_TYPE_NOTIFY:
+      case TRANSFER_REQUEST_TYPE_REQUEST:
+        list_for_each_entry(module, &pg_cop_modules_list_for_proto->list_head,
+                            list_head) {
+          /* TODO Multi protocol */
+          if (strcmp(module->info->name, request->proto_name_seq[0]))
+            continue;
+          pg_cop_hook_proto_pack(module, data_in, &data_out);
+          memcpy(block_buffer, data_out.data, data_out.size);
+          pg_cop_hook_proto_sweep(module, data_out);
+          write_size = pg_cop_hook_com_send(cli.module, cli.fd, 
+                                            block_buffer, sizeof(block_buffer), 0);
+          if (write_size <=0)
+            MOD_DEBUG_ERROR("Request not be written.");
+          break;
+        }
+
+        if (request->type != TRANSFER_REQUEST_TYPE_REQUEST)
+          break;
+
+      case TRANSFER_REQUEST_TYPE_WAIT:
+        read_size = pg_cop_hook_com_recv(cli.module, 
+                                         cli.fd, block_buffer, 
+                                         sizeof(block_buffer), 0);
+        if (read_size <= 0) {
+          MOD_DEBUG_INFO("Read error occured.");
+          break;
+        }
+
+        list_for_each_entry(module, &pg_cop_modules_list_for_proto->list_head,
+                            list_head) {
+          /* TODO Multi protocol */
+          if (strcmp(module->info->name, request->proto_name_seq[0]))
+            continue;
+          if (!pg_cop_hook_proto_unpack(module, data_in, &data_out, 0)) {
+            request->in_data = data_out.data;
+            request->in_data_size = data_out.size;
+            list_move_tail(&request->list_head, &response_queue.list_head);
+          } else {
+            MOD_DEBUG_DEBUG(rodata_str_protocol_process_skipped);
+          }
+          pg_cop_hook_proto_sweep(module, data_out);
+        }
+
+        break;   
+      default:
+        MOD_DEBUG_CRITICAL("No that kind of request type.");
       }
-      pg_cop_hook_proto_sweep(module, data_out);
     }
   }
 
