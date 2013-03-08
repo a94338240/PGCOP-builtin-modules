@@ -1,21 +1,25 @@
-noinst_LTLIBRARIES = mod_socket.la \
-                     mod_transceiver.la \
-										 mod_cop_main_protocol.la
+#   PGCOP - PocoGraph Component Oriented Platform.
+#   Copyright (C) 2013  David Wu <david@pocograph.com>
 
-mod_socket_la_SOURCES = pg_cop_mod_socket.c
-mod_socket_la_LIBADD = ../libPGCOP/libPGCOP.la
-mod_socket_la_LDFLAGS = -avoid-version -module -rpath /nowhere
-mod_socket_la_CFLAGS = -I ../libPGCOP
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
 
-mod_transceiver_la_SOURCES = pg_cop_mod_transceiver.c
-mod_transceiver_la_LIBADD = ../libPGCOP/libPGCOP.la
-mod_transceiver_la_LDFLAGS = -avoid-version -module -rpath /nowhere
-mod_transceiver_la_CFLAGS = -I ../libPGCOP
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
 
-mod_cop_main_protocol_la_SOURCES = pg_cop_mod_cop_protocol.c
-mod_cop_main_protocol_la_LIBADD = ../libPGCOP/libPGCOP.la
-mod_cop_main_protocol_la_LDFLAGS = -avoid-version -module -rpath /nowhere
-mod_cop_main_protocol_la_CFLAGS = -I ../libPGCOP
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+noinst_LTLIBRARIES = mod_tester.la
+
+mod_tester_la_SOURCES = pg_cop_mod_tester.c
+mod_tester_la_LIBADD = ../libPGCOP/libPGCOP.la
+mod_tester_la_LDFLAGS = -avoid-version -module -rpath /nowhere
+mod_tester_la_CFLAGS = -I ../libPGCOP
 
 install-data-hook:
 	mkdir -p $(datadir)/pgcop/modules
