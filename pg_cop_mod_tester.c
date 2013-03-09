@@ -70,6 +70,7 @@ static void *tester_start(pg_cop_module_t *module)
     free(method);
   }
  out:
+  DEBUG_ERROR("Service down.");
   pg_cop_module_interface_revoke(intf);
   return NULL;
 }

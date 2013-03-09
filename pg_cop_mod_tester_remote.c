@@ -71,6 +71,7 @@ static void *tester_remote_start(pg_cop_module_t *module)
   }
 
  out:
+  DEBUG_INFO("Service down.");
   pg_cop_module_interface_revoke(intf);
   return NULL;
 }
