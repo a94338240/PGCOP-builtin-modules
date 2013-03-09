@@ -14,12 +14,18 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-noinst_LTLIBRARIES = mod_tester.la
+noinst_LTLIBRARIES = mod_tester.la \
+	                   mod_tester_remote.la
 
 mod_tester_la_SOURCES = pg_cop_mod_tester.c
 mod_tester_la_LIBADD = ../libPGCOP/libPGCOP.la
 mod_tester_la_LDFLAGS = -avoid-version -module -rpath /nowhere
 mod_tester_la_CFLAGS = -I ../libPGCOP
+
+mod_tester_remote_la_SOURCES = pg_cop_mod_tester_remote.c
+mod_tester_remote_la_LIBADD = ../libPGCOP/libPGCOP.la
+mod_tester_remote_la_LDFLAGS = -avoid-version -module -rpath /nowhere
+mod_tester_remote_la_CFLAGS = -I ../libPGCOP
 
 install-data-hook:
 	mkdir -p $(datadir)/pgcop/modules
