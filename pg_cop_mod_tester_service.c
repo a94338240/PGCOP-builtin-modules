@@ -31,7 +31,7 @@ const pg_cop_module_hooks_t pg_cop_module_hooks = {
 };
 
 const pg_cop_module_info_t pg_cop_module_info = {
-  .name = "mod_tester_remote"
+  .name = "mod_tester_service"
 };
 
 static int init(int argc, char **argv) 

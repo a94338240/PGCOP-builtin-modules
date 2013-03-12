@@ -21,26 +21,26 @@
 #include <string.h>
 #include <stdlib.h>
 
-static int tester_init(int argc, char **argv);
-static void *tester_start(pg_cop_module_t *module);
-static char *tester_ping(char *param);
+static int init(int argc, char **argv);
+static void *start(pg_cop_module_t *module);
+static char *ping(char *param);
 
 const pg_cop_module_hooks_t pg_cop_module_hooks = {
-  .init = tester_init,
-  .start = tester_start
+  .init = init,
+  .start = start
 };
 
 const pg_cop_module_info_t pg_cop_module_info = {
   .name = "mod_tester"
 };
 
-static int tester_init(int argc, char **argv) 
+static int init(int argc, char **argv) 
 {
   MOD_DEBUG_INFO("Module init OK");
   return 0;
 }
 
-static void *tester_start(pg_cop_module_t *module)
+static void *start(pg_cop_module_t *module)
 {
   char *method;
   char *res;
@@ -57,7 +57,7 @@ static void *tester_start(pg_cop_module_t *module)
 
     if (strcmp(method, "ping") == 0) {
       pg_cop_module_interface_pop(intf, VSTACK_TYPE_STRING, &param1);
-      res = tester_ping(param1);
+      res = ping(param1);
       pg_cop_module_interface_return(intf, 1, VSTACK_TYPE_STRING, res);
       MOD_DEBUG_INFO("Give a pong.");
       free(param1);
@@ -75,7 +75,7 @@ static void *tester_start(pg_cop_module_t *module)
   return NULL;
 }
 
-static char *tester_ping(char *param)
+static char *ping(char *param)
 {
   char *res = (char *)malloc(128);
   sprintf(res, "pong %s", param);

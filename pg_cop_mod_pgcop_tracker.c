@@ -57,8 +57,6 @@ static int init(int argc, char **argv)
   return 0;
 }
 
-
-
 static void *start(pg_cop_module_t *module)
 {
   char *method;
