@@ -18,12 +18,18 @@
 
 #include "pg_cop_modules.h"
 #include "pg_cop_interface.h"
+#include "pg_cop_seeds.h"
 #include <string.h>
 #include <stdlib.h>
+#include <socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 static int init(int argc, char **argv);
 static void *start(pg_cop_module_t *module);
-static int announce_seed(char *param);
+static int announce_seed(int sockfd, char *infohash, int port);
+static int get_announced_peers(pg_cop_module_interface_t *intf,
+                               char *hashinfo);
 
 const pg_cop_module_hooks_t pg_cop_module_hooks = {
   .init = init,
@@ -34,17 +40,31 @@ const pg_cop_module_info_t pg_cop_module_info = {
   .name = "mod_pgcop_tracker"
 };
 
+typedef struct {
+  char *infohash;
+  char *host;
+  int port;
+  struct list_head list_head;
+} _announced_seeds_t;
+static _announced_seeds_t *announced_seeds;
+
 static int init(int argc, char **argv) 
 {
   MOD_DEBUG_INFO("Module init OK");
+  announced_seeds = malloc(sizeof(_announced_seeds_t));
+  INIT_LIST_HEAD(&announced_seeds->list_head);
+  
   return 0;
 }
+
+
 
 static void *start(pg_cop_module_t *module)
 {
   char *method;
   int res;
-  char *param1;
+  char *param_str[1];
+  int param_i32[1];
 
   pg_cop_module_interface_t *intf = 
     pg_cop_module_interface_announce(module->info->name, 
@@ -56,11 +76,20 @@ static void *start(pg_cop_module_t *module)
       goto out;
 
     if (strcmp(method, "announce_seed") == 0) {
-      pg_cop_module_interface_pop(intf, VSTACK_TYPE_STRING, &param1);
-      res = announce_seed(param1);
-      pg_cop_module_interface_return(intf, 1, VSTACK_TYPE_U8, res);
-      free(param1);
-    } else {
+      pg_cop_module_interface_pop(intf, VSTACK_TYPE_STRING, &param_str[0]);
+      pg_cop_module_interface_pop(intf, VSTACK_TYPE_I32, &param_i32[0]);
+      res = announce_seed(intf->peer->connection_id,
+                          param_str[0], param_i32[0]);
+      pg_cop_module_interface_return(intf, 1, VSTACK_TYPE_I32, res);
+      free(param_str[0]);
+    } 
+    else if (strcmp(method, "get_announced_peers")) {
+      pg_cop_module_interface_pop(intf, VSTACK_TYPE_STRING, &param_str[0]);
+      get_announced_peers(intf, param_str[0]);
+      pg_cop_module_interface_return(intf, 0);
+      free(param_str[0]);
+    } 
+    else {
       MOD_DEBUG_ERROR("No that method named %s.", method);
       pg_cop_module_interface_return(intf, 0);
     }
@@ -69,14 +98,55 @@ static void *start(pg_cop_module_t *module)
   }
 
  out:
-  MOD_DEBUG_INFO("Service down.");
+  MOD_DEBUG_INFO("Module shut down.");
   pg_cop_module_interface_revoke(intf);
   return NULL;
 }
 
-static int announce_seed(char *param)
+static int announce_seed(int sockfd, char *infohash, int port)
 {
   int res = 1;
-  MOD_DEBUG_INFO("Seed with infohash=%s announced.", param);
+  _announced_seeds_t *announcement;
+  _announced_seeds_t *announced;
+  struct sockaddr addr;
+  struct sockaddr_in *inet_addr;
+  char *host;
+  socklen_t addrlen = sizeof(addr);  
+  inet_addr = (struct sockaddr_in *)&addr;
+  getpeername(sockfd, &addr, &addrlen);
+  host = inet_ntoa(inet_addr->sin_addr);
+
+  list_for_each_entry(announced, &announced_seeds->list_head, list_head) {
+    if (strcmp(announced->infohash, infohash) == 0 &&
+        strcmp(announced->host, host) == 0) {
+      DEBUG_INFO("Duplicated announced peer?");
+      return 0;
+    }
+  }
+
+  announcement = malloc(sizeof(_announced_seeds_t));
+  announcement->infohash = strdup(infohash);
+  announcement->host = strdup(host);
+  announcement->port = port;
+  INIT_LIST_HEAD(&announcement->list_head);
+  list_add_tail(&announcement->list_head, &announced_seeds->list_head);
+  MOD_DEBUG_INFO("Seed with infohash=%s announced, host=%s, port=%d.", 
+                 announcement->infohash,
+                 announcement->host,
+                 announcement->port);
   return res;
+}
+
+static int get_announced_peers(pg_cop_module_interface_t *intf,
+                               char *hashinfo)
+{
+  _announced_seeds_t *announced;
+  list_for_each_entry(announced, &announced_seeds->list_head, list_head) {
+    if (strcmp(announced->infohash, hashinfo) == 0) {
+      pg_cop_module_interface_push(intf, VSTACK_TYPE_STRING, announced->host);
+      pg_cop_module_interface_push(intf, VSTACK_TYPE_I32, announced->port);
+    }
+  }
+
+  return 0;
 }
