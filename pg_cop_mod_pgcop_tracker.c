@@ -21,7 +21,7 @@
 #include "pg_cop_seeds.h"
 #include <string.h>
 #include <stdlib.h>
-#include <socket.h>
+#include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
