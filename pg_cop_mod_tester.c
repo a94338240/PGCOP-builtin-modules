@@ -26,58 +26,58 @@ static void *start(pg_cop_module_t *module);
 static char *ping(char *param);
 
 const pg_cop_module_hooks_t pg_cop_module_hooks = {
-  .init = init,
-  .start = start
+	.init = init,
+	.start = start
 };
 
 const pg_cop_module_info_t pg_cop_module_info = {
-  .name = "mod_tester"
+	.name = "mod_tester"
 };
 
-static int init(int argc, char **argv) 
+static int init(int argc, char **argv)
 {
-  MOD_DEBUG_INFO("Module init OK");
-  return 0;
+	MOD_DEBUG_INFO("Module init OK");
+	return 0;
 }
 
 static void *start(pg_cop_module_t *module)
 {
-  char *method;
-  char *res;
-  char *param1;
+	char *method;
+	char *res;
+	char *param1;
 
-  pg_cop_module_interface_t *intf = 
-    pg_cop_module_interface_announce(module->info->name, 
-                                     MODULE_INTERFACE_TYPE_THREAD);
+	pg_cop_module_interface_t *intf =
+	    pg_cop_module_interface_announce(module->info->name,
+	                                     MODULE_INTERFACE_TYPE_THREAD);
 
-  for (;;) {
-    MOD_DEBUG_INFO("Wait a ping.");
-    if (pg_cop_module_interface_wait(intf, &method) != 0)
-      goto out;
+	for (;;) {
+		MOD_DEBUG_INFO("Wait a ping.");
+		if (pg_cop_module_interface_wait(intf, &method) != 0)
+			goto out;
 
-    if (strcmp(method, "ping") == 0) {
-      pg_cop_module_interface_pop(intf, VSTACK_TYPE_STRING, &param1);
-      res = ping(param1);
-      pg_cop_module_interface_return(intf, 1, VSTACK_TYPE_STRING, res);
-      MOD_DEBUG_INFO("Give a pong.");
-      free(param1);
-      free(res);
-    } else {
-      MOD_DEBUG_ERROR("No that method named %s.", method);
-      pg_cop_module_interface_return(intf, 0);
-    }
-  
-    free(method);
-  }
- out:
-  DEBUG_ERROR("Service down.");
-  pg_cop_module_interface_revoke(intf);
-  return NULL;
+		if (strcmp(method, "ping") == 0) {
+			pg_cop_module_interface_pop(intf, VSTACK_TYPE_STRING, &param1);
+			res = ping(param1);
+			pg_cop_module_interface_return(intf, 1, VSTACK_TYPE_STRING, res);
+			MOD_DEBUG_INFO("Give a pong.");
+			free(param1);
+			free(res);
+		} else {
+			MOD_DEBUG_ERROR("No that method named %s.", method);
+			pg_cop_module_interface_return(intf, 0);
+		}
+
+		free(method);
+	}
+out:
+	DEBUG_ERROR("Service down.");
+	pg_cop_module_interface_revoke(intf);
+	return NULL;
 }
 
 static char *ping(char *param)
 {
-  char *res = (char *)malloc(128);
-  sprintf(res, "pong %s", param);
-  return res;
+	char *res = (char *)malloc(128);
+	sprintf(res, "pong %s", param);
+	return res;
 }
