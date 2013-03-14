@@ -28,6 +28,7 @@
 static int init(int argc, char **argv);
 static void *start(pg_cop_module_t *module);
 static int announce_seed(int sockfd, char *infohash, int port);
+static int revoke_seed(int sockfd, char *infohash, int port);
 static int get_announced_peers(pg_cop_module_interface_t *intf,
                                char *hashinfo);
 
@@ -59,68 +60,94 @@ static int init(int argc, char **argv)
 
 static void *start(pg_cop_module_t *module)
 {
-	char *method;
+	char *method = NULL;
 	int res;
-	char *param_str[1];
+	char *param_str[1] = {0};
 	int param_i32[1];
 
 	pg_cop_module_interface_t *intf =
 	    pg_cop_module_interface_announce(module->info->name,
 	                                     MODULE_INTERFACE_TYPE_THREAD);
+	if (!intf)
+		goto announce_intf;
 
 	for (;;) {
 		MOD_DEBUG_INFO("Wait a announcement.");
 		if (pg_cop_module_interface_wait(intf, &method) != 0)
-			goto out;
+			goto wait_a_request;
 
 		if (strcmp(method, "announce_seed") == 0) {
-			pg_cop_module_interface_pop(intf, VSTACK_TYPE_STRING, &param_str[0]);
+			if (pg_cop_module_interface_pop(intf, VSTACK_TYPE_STRING, &param_str[0]))
+				goto pop_method_cont;
 			pg_cop_module_interface_pop(intf, VSTACK_TYPE_I32, &param_i32[0]);
 			res = announce_seed(intf->peer->connection_id,
 			                    param_str[0], param_i32[0]);
-			pg_cop_module_interface_return(intf, 1, VSTACK_TYPE_I32, res);
+			if (pg_cop_module_interface_return(intf, 1, VSTACK_TYPE_I32, res))
+				goto return_res_cont;
 			free(param_str[0]);
+			param_str[0] = NULL;
+		} else if (strcmp(method, "revoke_seed")) {
+			if (pg_cop_module_interface_pop(intf, VSTACK_TYPE_STRING, &param_str[0]))
+				goto pop_method_cont;
+			pg_cop_module_interface_pop(intf, VSTACK_TYPE_I32, &param_i32[0]);
+			res = revoke_seed(intf->peer->connection_id,
+			                  param_str[0], param_i32[0]);
+			if (pg_cop_module_interface_return(intf, 1, VSTACK_TYPE_I32, res))
+				goto return_res_cont;
+			free(param_str[0]);
+			param_str[0] = NULL;
 		} else if (strcmp(method, "get_announced_peers")) {
-			pg_cop_module_interface_pop(intf, VSTACK_TYPE_STRING, &param_str[0]);
+			if (pg_cop_module_interface_pop(intf, VSTACK_TYPE_STRING, &param_str[0]))
+				goto pop_method_cont;
 			get_announced_peers(intf, param_str[0]);
-			pg_cop_module_interface_return(intf, 0);
+			if (pg_cop_module_interface_return(intf, 0))
+				goto return_res_cont;
 			free(param_str[0]);
+			param_str[0] = NULL;
 		} else {
 			MOD_DEBUG_ERROR("No that method named %s.", method);
 			pg_cop_module_interface_return(intf, 0);
 		}
 
 		free(method);
+		method = NULL;
+		continue;
+return_res_cont:
+		if (param_str[0]) {
+			free(param_str[0]);
+			param_str[0] = NULL;
+		}
+		pg_cop_vstack_clear(intf->vstack);
+pop_method_cont:
+		free(method);
 	}
 
-out:
-	MOD_DEBUG_INFO("Module shut down.");
+wait_a_request:
 	pg_cop_module_interface_revoke(intf);
+announce_intf:
+	MOD_DEBUG_INFO("Module shut down.");
+	pthread_exit(0);
 	return NULL;
 }
 
 static int announce_seed(int sockfd, char *infohash, int port)
 {
-	int res = 1;
-	_announced_seeds_t *announcement;
-	_announced_seeds_t *announced;
 	struct sockaddr addr;
-	struct sockaddr_in *inet_addr;
-	char *host;
+	struct sockaddr_in *inet_addr = (struct sockaddr_in *)&addr;
 	socklen_t addrlen = sizeof(addr);
-	inet_addr = (struct sockaddr_in *)&addr;
 	getpeername(sockfd, &addr, &addrlen);
-	host = inet_ntoa(inet_addr->sin_addr);
+	char *host = inet_ntoa(inet_addr->sin_addr);
 
+	_announced_seeds_t *announced;
 	list_for_each_entry(announced, &announced_seeds->list_head, list_head) {
 		if (strcmp(announced->infohash, infohash) == 0 &&
 		        strcmp(announced->host, host) == 0) {
 			DEBUG_INFO("Duplicated announced peer?");
-			return 0;
+			goto check_dup;
 		}
 	}
 
-	announcement = malloc(sizeof(_announced_seeds_t));
+	_announced_seeds_t *announcement = malloc(sizeof(_announced_seeds_t));
 	announcement->infohash = strdup(infohash);
 	announcement->host = strdup(host);
 	announcement->port = port;
@@ -130,7 +157,35 @@ static int announce_seed(int sockfd, char *infohash, int port)
 	               announcement->infohash,
 	               announcement->host,
 	               announcement->port);
-	return res;
+
+	return 0;
+
+check_dup:
+	return -1;
+}
+
+static int revoke_seed(int sockfd, char *infohash, int port)
+{
+	struct sockaddr addr;
+	struct sockaddr_in *inet_addr = (struct sockaddr_in *)&addr;
+	socklen_t addrlen = sizeof(addr);
+	getpeername(sockfd, &addr, &addrlen);
+	char *host = inet_ntoa(inet_addr->sin_addr);
+
+	_announced_seeds_t *announced, *announced_tmp;
+	list_for_each_entry_safe(announced, announced_tmp, &announced_seeds->list_head, list_head) {
+		if (strcmp(announced->infohash, infohash) == 0 &&
+		        strcmp(announced->host, host) == 0) {
+			DEBUG_INFO("Revoke announced seed.");
+			list_del(&announced->list_head);
+			free(announced->infohash);
+			free(announced->host);
+			free(announced);
+			break;
+		}
+	}
+
+	return 0;
 }
 
 static int get_announced_peers(pg_cop_module_interface_t *intf,
