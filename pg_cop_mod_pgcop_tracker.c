@@ -86,7 +86,7 @@ static void *start(pg_cop_module_t *module)
 				goto return_res_cont;
 			free(param_str[0]);
 			param_str[0] = NULL;
-		} else if (strcmp(method, "revoke_seed")) {
+		} else if (strcmp(method, "revoke_seed") == 0) {
 			if (pg_cop_module_interface_pop(intf, VSTACK_TYPE_STRING, &param_str[0]))
 				goto pop_method_cont;
 			pg_cop_module_interface_pop(intf, VSTACK_TYPE_I32, &param_i32[0]);
@@ -96,7 +96,7 @@ static void *start(pg_cop_module_t *module)
 				goto return_res_cont;
 			free(param_str[0]);
 			param_str[0] = NULL;
-		} else if (strcmp(method, "get_announced_peers")) {
+		} else if (strcmp(method, "get_announced_peers") == 0) {
 			if (pg_cop_module_interface_pop(intf, VSTACK_TYPE_STRING, &param_str[0]))
 				goto pop_method_cont;
 			get_announced_peers(intf, param_str[0]);
@@ -161,7 +161,7 @@ static int announce_seed(int sockfd, char *infohash, int port)
 	return 0;
 
 check_dup:
-	return -1;
+	return 0;
 }
 
 static int revoke_seed(int sockfd, char *infohash, int port)
@@ -189,11 +189,11 @@ static int revoke_seed(int sockfd, char *infohash, int port)
 }
 
 static int get_announced_peers(pg_cop_module_interface_t *intf,
-                               char *hashinfo)
+                               char *infohash)
 {
 	_announced_seeds_t *announced;
 	list_for_each_entry(announced, &announced_seeds->list_head, list_head) {
-		if (strcmp(announced->infohash, hashinfo) == 0) {
+		if (strcmp(announced->infohash, infohash) == 0) {
 			pg_cop_module_interface_push(intf, VSTACK_TYPE_STRING, announced->host);
 			pg_cop_module_interface_push(intf, VSTACK_TYPE_I32, announced->port);
 		}
