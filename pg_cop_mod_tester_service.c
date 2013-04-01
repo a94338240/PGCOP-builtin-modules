@@ -16,6 +16,18 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/*
+	@MODULE:
+		mod_tester_service
+
+	@TRACKER:
+		10.1.3.117:12728
+		10.1.2.130:8080
+
+	@METHODS:
+		ping
+ */
+
 #include "pg_cop_modules.h"
 #include "pg_cop_interface.h"
 #include <string.h>
