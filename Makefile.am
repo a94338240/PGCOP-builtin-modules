@@ -22,22 +22,22 @@ noinst_LTLIBRARIES = mod_tester.la \
 mod_tester_la_SOURCES = pg_cop_mod_tester.c
 mod_tester_la_LIBADD = ../libPGCOP/libPGCOP.la
 mod_tester_la_LDFLAGS = -avoid-version -module -rpath /nowhere
-mod_tester_la_CFLAGS = -I ../libPGCOP
+mod_tester_la_CFLAGS = -I $(srcdir)/../libPGCOP
 
 mod_tester_remote_la_SOURCES = pg_cop_mod_tester_remote.c
 mod_tester_remote_la_LIBADD = ../libPGCOP/libPGCOP.la
 mod_tester_remote_la_LDFLAGS = -avoid-version -module -rpath /nowhere
-mod_tester_remote_la_CFLAGS = -I ../libPGCOP
+mod_tester_remote_la_CFLAGS = -I $(srcdir)/../libPGCOP
 
 mod_tester_service_la_SOURCES = pg_cop_mod_tester_service.c
 mod_tester_service_la_LIBADD = ../libPGCOP/libPGCOP.la
 mod_tester_service_la_LDFLAGS = -avoid-version -module -rpath /nowhere
-mod_tester_service_la_CFLAGS = -I ../libPGCOP
+mod_tester_service_la_CFLAGS = -I $(srcdir)/../libPGCOP
 
 mod_pgcop_tracker_la_SOURCES = pg_cop_mod_pgcop_tracker.c
 mod_pgcop_tracker_la_LIBADD = ../libPGCOP/libPGCOP.la
 mod_pgcop_tracker_la_LDFLAGS = -avoid-version -module -rpath /nowhere
-mod_pgcop_tracker_la_CFLAGS = -I ../libPGCOP
+mod_pgcop_tracker_la_CFLAGS = -I $(srcdir)/../libPGCOP
 
 install-data-hook:
 	mkdir -p $(datadir)/pgcop/modules
